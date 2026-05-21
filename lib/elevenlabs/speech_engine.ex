@@ -51,7 +51,26 @@ defmodule ElevenLabs.SpeechEngine do
     end
   end
 
-  # --- internal helpers (create/update added in the next task) ---
+  @doc """
+  Creates a speech engine. Requires `:speech_engine` (a `Config` or bare map);
+  other keys (#{inspect(@body_keys)}) are optional and only sent when present.
+  """
+  @spec create(Client.t(), keyword()) :: {:ok, Response.t()} | {:error, Error.t()}
+  def create(%Client{req: req}, opts) do
+    req
+    |> Req.post(url: @base, json: build_body(opts))
+    |> decode(&Response.from_json/1)
+  end
+
+  @doc "Partially updates a speech engine. Only the provided keys are sent."
+  @spec update(Client.t(), String.t(), keyword()) :: {:ok, Response.t()} | {:error, Error.t()}
+  def update(%Client{req: req}, id, opts) do
+    req
+    |> Req.patch(url: "#{@base}/#{id}", json: build_body(opts))
+    |> decode(&Response.from_json/1)
+  end
+
+  # --- internal helpers ---
 
   defp decode({:ok, %{status: status, body: body}}, fun) when status in 200..299,
     do: {:ok, fun.(body)}
