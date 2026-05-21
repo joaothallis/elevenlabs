@@ -10,7 +10,7 @@ defmodule ElevenLabs.SpeechEngine do
 
   @base "v1/speech-engine"
   @list_params [:page_size, :search, :sort_direction, :sort_by, :cursor]
-  @body_keys [
+  @create_body_keys [
     :name,
     :speech_engine,
     :asr,
@@ -23,6 +23,8 @@ defmodule ElevenLabs.SpeechEngine do
     :tags,
     :overrides
   ]
+  # The update endpoint has no `overrides` field — it is create-only — mirroring the API.
+  @update_body_keys @create_body_keys -- [:overrides]
 
   @doc "Lists speech engines. Options: #{inspect(@list_params)}."
   @spec list(Client.t(), keyword()) :: {:ok, ListResponse.t()} | {:error, Error.t()}
@@ -54,20 +56,23 @@ defmodule ElevenLabs.SpeechEngine do
 
   @doc """
   Creates a speech engine. Requires `:speech_engine` (a `Config` or bare map);
-  other keys (#{inspect(@body_keys)}) are optional and only sent when present.
+  other keys (#{inspect(@create_body_keys)}) are optional and only sent when present.
   """
   @spec create(Client.t(), keyword()) :: {:ok, Response.t()} | {:error, Error.t()}
   def create(%Client{req: req}, opts) do
     req
-    |> Req.post(url: @base, json: build_body(opts))
+    |> Req.post(url: @base, json: build_body(opts, @create_body_keys))
     |> decode(&Response.from_json/1)
   end
 
-  @doc "Partially updates a speech engine. Only the provided keys are sent."
+  @doc """
+  Partially updates a speech engine. Only the provided keys are sent. Unlike
+  `create/2`, `update/3` has no `:overrides` field (it is create-only).
+  """
   @spec update(Client.t(), String.t(), keyword()) :: {:ok, Response.t()} | {:error, Error.t()}
   def update(%Client{req: req}, id, opts) do
     req
-    |> Req.patch(url: "#{@base}/#{id}", json: build_body(opts))
+    |> Req.patch(url: "#{@base}/#{id}", json: build_body(opts, @update_body_keys))
     |> decode(&Response.from_json/1)
   end
 
@@ -149,8 +154,8 @@ defmodule ElevenLabs.SpeechEngine do
 
   defp decode({:error, reason}, _fun), do: {:error, %Error{reason: reason}}
 
-  defp build_body(opts) do
-    for key <- @body_keys, Keyword.has_key?(opts, key), into: %{} do
+  defp build_body(opts, keys) do
+    for key <- keys, Keyword.has_key?(opts, key), into: %{} do
       {key, encode_value(key, Keyword.fetch!(opts, key))}
     end
   end

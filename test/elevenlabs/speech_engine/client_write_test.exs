@@ -49,4 +49,20 @@ defmodule ElevenLabs.SpeechEngine.ClientWriteTest do
     assert {:ok, %Response{name: "Renamed"}} =
              SpeechEngine.update(client(__MODULE__), "seng_9", name: "Renamed")
   end
+
+  test "update/3 does not send :overrides (a create-only field)" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      body = Jason.decode!(raw)
+      assert body["name"] == "Renamed"
+      refute Map.has_key?(body, "overrides")
+      Req.Test.json(conn, %{"speech_engine_id" => "seng_9", "name" => "Renamed"})
+    end)
+
+    assert {:ok, %Response{}} =
+             SpeechEngine.update(client(__MODULE__), "seng_9",
+               name: "Renamed",
+               overrides: %{conversation_config_override: %{}}
+             )
+  end
 end

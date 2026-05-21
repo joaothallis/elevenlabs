@@ -28,6 +28,8 @@ defmodule ElevenLabs.SpeechEngine.Session do
   Sends an agent response back for TTS synthesis. Accepts a binary or an
   Enumerable/Stream of binary text deltas. Must be called from within a
   transcript handler; called elsewhere it logs a warning and is a no-op.
+
+  If the connection has already closed, the chunks are silently dropped.
   """
   @spec send_response(t(), binary() | Enumerable.t()) :: :ok
   def send_response(%__MODULE__{event_id: nil}, _response) do
