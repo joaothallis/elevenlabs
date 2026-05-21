@@ -101,6 +101,41 @@ defmodule ElevenLabs.SpeechEngine.Session do
     end
   end
 
+  # The async_nolink task finished normally; flush its pending :DOWN and clear it.
+  def handle_info({ref, _result}, %{current_task: %Task{ref: ref}} = state)
+      when is_reference(ref) do
+    Process.demonitor(ref, [:flush])
+    {:ok, %{state | current_task: nil}}
+  end
+
+  # The current transcript task went down. :normal/:killed are expected (completion
+  # or interruption); anything else is a crash -> notify and close out the response.
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{current_task: %Task{ref: ref}} = state) do
+    state = %{state | current_task: nil}
+
+    if reason in [:normal, :killed] do
+      {:ok, state}
+    else
+      call_handler(state, :handle_error, [{:handler_crashed, reason}])
+
+      frame =
+        Jason.encode!(%{
+          type: "agent_response",
+          content: "",
+          event_id: state.current_event_id,
+          is_final: true
+        })
+
+      {:push, {:text, frame}, state}
+    end
+  end
+
+  # Stale task messages from an already-cleared task — ignore.
+  def handle_info({ref, _result}, state) when is_reference(ref), do: {:ok, state}
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) when is_reference(ref),
+    do: {:ok, state}
+
   def handle_info(_msg, state), do: {:ok, state}
 
   @impl WebSock
