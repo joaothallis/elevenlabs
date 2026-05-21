@@ -85,9 +85,23 @@ defmodule ElevenLabs.SpeechEngine.Session do
   end
 
   @impl WebSock
-  def handle_info(_msg, state) do
-    {:ok, state}
+  def handle_info({:se_chunk, event_id, content, is_final}, %{current_event_id: current} = state) do
+    if event_id == current do
+      frame =
+        Jason.encode!(%{
+          type: "agent_response",
+          content: content,
+          event_id: event_id,
+          is_final: is_final
+        })
+
+      {:push, {:text, frame}, state}
+    else
+      {:ok, state}
+    end
   end
+
+  def handle_info(_msg, state), do: {:ok, state}
 
   @impl WebSock
   def terminate(_reason, state) do
@@ -120,6 +134,30 @@ defmodule ElevenLabs.SpeechEngine.Session do
     {:ok, state}
   end
 
+  defp handle_message(%{"type" => "user_transcript"} = msg, state) do
+    incoming = msg["event_id"]
+
+    if duplicate?(incoming, state) do
+      {:ok, state}
+    else
+      state = cancel_current(state)
+      transcript = parse_transcript(msg["user_transcript"] || [])
+
+      session = %__MODULE__{
+        conn: self(),
+        event_id: incoming,
+        conversation_id: state.conversation_id
+      }
+
+      task =
+        Task.Supervisor.async_nolink(ElevenLabs.TaskSupervisor, fn ->
+          state.handler.handle_transcript(transcript, session)
+        end)
+
+      {:ok, %{state | current_task: task, current_event_id: incoming}}
+    end
+  end
+
   defp handle_message(_unknown, state) do
     {:ok, state}
   end
@@ -145,5 +183,15 @@ defmodule ElevenLabs.SpeechEngine.Session do
   defp cancel_current(%{current_task: task} = state) do
     Task.shutdown(task, :brutal_kill)
     %{state | current_task: nil}
+  end
+
+  defp duplicate?(incoming, %{current_event_id: current, current_task: task}) do
+    incoming != nil and incoming == current and task != nil and Process.alive?(task.pid)
+  end
+
+  defp parse_transcript(list) do
+    Enum.map(list, fn msg ->
+      %ElevenLabs.SpeechEngine.ConversationMessage{role: msg["role"], content: msg["content"]}
+    end)
   end
 end
