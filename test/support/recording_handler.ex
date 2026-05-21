@@ -20,10 +20,14 @@ defmodule ElevenLabs.RecordingHandler do
   end
 
   # Sends {:start, event_id}, sleeps, then {:done, event_id}. Used to test interruption.
+  # The test pid is captured once at entry: a task that outlives its test (e.g. the
+  # duplicate-skip test, which does not await {:done}) then targets its own finished
+  # test process rather than leaking a stray message into a later test.
   @impl true
   def handle_transcript(_transcript, session) do
-    send(TestSupport.test_pid(), {:start, session.event_id})
+    pid = TestSupport.test_pid()
+    send(pid, {:start, session.event_id})
     Process.sleep(300)
-    send(TestSupport.test_pid(), {:done, session.event_id})
+    send(pid, {:done, session.event_id})
   end
 end
