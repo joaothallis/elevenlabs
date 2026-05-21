@@ -6,6 +6,7 @@ defmodule ElevenLabs.SpeechEngine do
 
   alias ElevenLabs.{Client, Error}
   alias ElevenLabs.SpeechEngine.{Config, JWT, ListResponse, Response}
+  alias ElevenLabs.SpeechEngine.Server
 
   @base "v1/speech-engine"
   @list_params [:page_size, :search, :sort_direction, :sort_by, :cursor]
@@ -100,6 +101,44 @@ defmodule ElevenLabs.SpeechEngine do
     end
   end
 
+  @doc """
+  Starts a standalone Speech Engine WebSocket server (Bandit + verifying Plug)
+  and returns `{:ok, pid}`.
+
+  The first argument provides the API key used to verify incoming connections —
+  pass an `ElevenLabs.Client` or the key string directly. `opts` requires
+  `:handler` and accepts `:port` (default 3001), `:path`, `:debug`.
+  """
+  @spec serve(Client.t() | String.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def serve(client_or_key, opts) do
+    api_key = resolve_api_key(client_or_key, opts)
+    Server.start_link(Keyword.put(opts, :api_key, api_key))
+  end
+
+  @doc "Stops a server started by `serve/2`."
+  @spec stop(pid()) :: :ok
+  def stop(pid) when is_pid(pid) do
+    # Bandit's listener supervisor terminates with `:shutdown`, which
+    # `Supervisor.stop/1` re-raises into the caller; unlink the owner first and
+    # catch that exit, then confirm termination via a monitor.
+    Process.unlink(pid)
+    ref = Process.monitor(pid)
+
+    try do
+      Supervisor.stop(pid, :shutdown)
+    catch
+      :exit, _ -> :ok
+    end
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      5_000 ->
+        Process.demonitor(ref, [:flush])
+        :ok
+    end
+  end
+
   # --- internal helpers ---
 
   defp decode({:ok, %{status: status, body: body}}, fun) when status in 200..299,
@@ -118,4 +157,7 @@ defmodule ElevenLabs.SpeechEngine do
 
   defp encode_value(:speech_engine, value), do: Config.to_map(value)
   defp encode_value(_key, value), do: value
+
+  defp resolve_api_key(%Client{api_key: key}, opts), do: opts[:api_key] || key
+  defp resolve_api_key(key, opts) when is_binary(key), do: opts[:api_key] || key
 end
