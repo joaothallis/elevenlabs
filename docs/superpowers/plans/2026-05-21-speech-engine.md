@@ -118,6 +118,11 @@ erl_crash.dump
 *.beam
 /config/*.secret.exs
 .elixir_ls/
+/.mix/
+/.hex/
+/.direnv/
+result
+result-*
 ```
 
 - [ ] **Step 5: Create `test/test_helper.exs`**
