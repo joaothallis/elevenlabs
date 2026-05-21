@@ -5,7 +5,7 @@ defmodule ElevenLabs.SpeechEngine do
   """
 
   alias ElevenLabs.{Client, Error}
-  alias ElevenLabs.SpeechEngine.{Config, ListResponse, Response}
+  alias ElevenLabs.SpeechEngine.{Config, JWT, ListResponse, Response}
 
   @base "v1/speech-engine"
   @list_params [:page_size, :search, :sort_direction, :sort_by, :cursor]
@@ -68,6 +68,36 @@ defmodule ElevenLabs.SpeechEngine do
     req
     |> Req.patch(url: "#{@base}/#{id}", json: build_body(opts))
     |> decode(&Response.from_json/1)
+  end
+
+  @auth_header "x-elevenlabs-speech-engine-authorization"
+
+  @doc """
+  Verifies that a request carries a valid Speech Engine authorization header.
+  Accepts a `Plug.Conn` or a headers map/list. Returns a boolean.
+
+  Only needed for fully manual WebSocket integration; `ElevenLabs.SpeechEngine.Plug`
+  and `serve/2` verify automatically.
+  """
+  @spec verify_request(Plug.Conn.t() | map() | list(), String.t()) :: boolean()
+  def verify_request(%Plug.Conn{} = conn, api_key) do
+    case Plug.Conn.get_req_header(conn, @auth_header) do
+      [value | _] -> match?({:ok, _}, JWT.verify(value, api_key))
+      [] -> false
+    end
+  end
+
+  def verify_request(headers, api_key) when is_list(headers) do
+    headers |> Map.new(fn {k, v} -> {String.downcase(k), v} end) |> verify_request(api_key)
+  end
+
+  def verify_request(headers, api_key) when is_map(headers) do
+    downcased = Map.new(headers, fn {k, v} -> {String.downcase(to_string(k)), v} end)
+
+    case Map.get(downcased, @auth_header) do
+      nil -> false
+      value -> match?({:ok, _}, JWT.verify(value, api_key))
+    end
   end
 
   # --- internal helpers ---
